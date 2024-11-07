@@ -141,6 +141,11 @@ AI クリエイトスタジオを使用すると、以下のことが可能に�
    - TypeScript を使用した型定義の重要性
    - フロントエンドとバックエンド間のデータ構造の一貫性
 
+6. サービスコネクションを設定:
+
+7. Azure App Serviceを準備：
+　Frontend→WindowsとBackend→LinuxをAzure App Serviceにデプロイ
+
 このプロジェクトを通じて、モダンなウェブアプリケーション開発の複雑な側面を学ぶことができます。フロントエンドとバックエンドの統合、ビジュアルプログラミング、AI 機能の実装、動的 API 生成など、多岐にわたる技術要素を含んでいます。
 
 ## テスト文
@@ -151,4 +156,86 @@ AI クリエイトスタジオを使用すると、以下のことが可能に�
 "max_length": 100,
 "language": "日本語"
 }
+```
+
+## バックエンドパイプライン記載
+
+```
+trigger:
+  - none
+
+variables:
+  - group: webgame-portal-backend-variables
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: NodeTool@0
+  inputs:
+    versionSpec: '20.x'  # Node.jsのバージョンを指定
+  displayName: 'Node.jsのインストール'
+
+- script: |
+    echo "MONGODB_URI: $(MONGODB_URI)"
+    echo "JWT_SECRET: $(JWT_SECRET)"
+  displayName: '変数の確認'
+
+- script: |
+    cd webgame-portal-backend
+    npm ci
+    npm run build
+  displayName: '依存関係のインストールとプロジェクトのビルド'
+
+# ビルド成果物をルートにコピー
+- task: CopyFiles@2
+  inputs:
+    sourceFolder: '$(System.DefaultWorkingDirectory)/webgame-portal-backend/dist'
+    contents: '**'
+    targetFolder: '$(Build.ArtifactStagingDirectory)/dist'
+    flattenFolders: false
+  displayName: 'ビルド成果物のコピー'
+
+# package.jsonとpackage-lock.jsonをコピー
+- task: CopyFiles@2
+  inputs:
+    sourceFolder: '$(System.DefaultWorkingDirectory)/webgame-portal-backend'
+    contents: 'package*.json'
+    targetFolder: '$(Build.ArtifactStagingDirectory)'
+  displayName: 'package.jsonとpackage-lock.jsonのコピー'
+
+# プロダクション依存関係のインストール
+- script: |
+    cd $(Build.ArtifactStagingDirectory)
+    npm install --only=production
+  displayName: 'プロダクション依存関係のインストール'
+
+# ビルド成果物のアーカイブ
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(Build.ArtifactStagingDirectory)'
+    includeRootFolder: false
+    archiveType: 'zip'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+    replaceExistingArchive: true
+  displayName: 'ビルド成果物のアーカイブ'
+
+# Azure App Service へのデプロイ
+- task: AzureRmWebAppDeployment@4
+  inputs:
+    ConnectionType: 'AzureRM'
+    azureSubscription: 'armsvc-webgameportal'
+    appType: 'webApp'
+    WebAppName: 'webgameportal-backend'
+    DeployToSlotOrASE: true
+    ResourceGroupName: 'rg-kojima-webgameportal'
+    SlotName: 'production'
+    package: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+    AppSettings: |
+      NODE_ENV=production
+      MONGODB_URI=$(MONGODB_URI)
+      JWT_SECRET=$(JWT_SECRET)
+      PORT=5000
+  displayName: 'Azure App Serviceへのデプロイ'
+
 ```
