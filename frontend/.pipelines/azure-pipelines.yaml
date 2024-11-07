@@ -1,0 +1,46 @@
+trigger:
+  - none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: frontend-variables
+
+steps:
+- task: NodeTool@0
+  inputs:
+    versionSpec: '20.x'
+  displayName: 'Install Node.js'
+
+- script: |
+    cd frontend
+    npm cache clean --force
+    npm install --legacy-peer-deps
+    npm run build
+  displayName: 'npm install and build'
+
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(System.DefaultWorkingDirectory)/frontend/build'
+    includeRootFolder: false
+    archiveType: 'zip'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+    replaceExistingArchive: true
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: '$(Build.ArtifactStagingDirectory)'
+    artifactName: 'drop'
+    publishLocation: 'Container'
+
+- task: AzureWebApp@1
+  inputs:
+    azureSubscription: 'armsvc-aicreate'
+    appName: 'aicreate-frontend'
+    appType: 'webApp'
+    deployToSlotOrASE: true
+    resourceGroupName: 'rg-kojima-aicreate'
+    slotName: 'production'
+    deploymentMethod: 'auto'
+    package: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'

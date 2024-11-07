@@ -1,0 +1,78 @@
+trigger:
+  - none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: backend-variables
+  - name: nodeVersion
+    value: '20.x'
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildJob
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '$(nodeVersion)'
+            displayName: 'Node.jsのインストール'
+
+          - script: |
+              cd backend
+              npm ci
+            displayName: '依存関係のインストール'
+
+          - script: |
+              cd backend
+              npm run build
+            displayName: 'ビルド'
+
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: '$(System.DefaultWorkingDirectory)/backend/dist'
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(Build.ArtifactStagingDirectory)/backend.zip'
+              replaceExistingArchive: true
+
+          - publish: $(Build.ArtifactStagingDirectory)/backend.zip
+            artifact: drop
+
+  - stage: Deploy
+    jobs:
+      - job: DeployJob
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - download: current
+            artifact: drop
+
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: 'armsvc-aicreate'
+              appName: 'aicreate-backend'
+              appType: 'webApp'
+              deployToSlotOrASE: true
+              resourceGroupName: 'rg-kojima-aicreate'
+              slotName: 'production'
+              deploymentMethod: 'auto'
+              package: '$(Pipeline.Workspace)/drop/backend.zip'
+
+          - task: AzureAppServiceSettings@1
+            inputs:
+              azureSubscription: 'armsvc-aicreate'
+              appName: 'aicreate-backend'
+              resourceGroupName: 'rg-kojima-aicreate'
+              appSettings: |
+                [
+                  {
+                    "name": "WEBSITE_RUN_FROM_PACKAGE",
+                    "value": "0"
+                  },
+                  {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                  }
+                ]
